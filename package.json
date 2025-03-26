@@ -1,0 +1,37 @@
+{
+  "name": "excalimux",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "node esbuild.config.js",
+    "dev": "node esbuild.config.js --watch & npx http-server dist -p 12000 --cors -a 0.0.0.0",
+    "start": "npm run build && npx http-server dist -p 12000 --cors -a 0.0.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/philz/excalimux.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/philz/excalimux/issues"
+  },
+  "homepage": "https://github.com/philz/excalimux#readme",
+  "description": "",
+  "dependencies": {
+    "@excalidraw/excalidraw": "^0.14.0",
+    "esbuild": "^0.25.1",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/react": "^19.0.12",
+    "@types/react-dom": "^19.0.4",
+    "fs-extra": "^11.3.0",
+    "http-server": "^14.1.1",
+    "typescript": "^5.8.2"
+  }
+}

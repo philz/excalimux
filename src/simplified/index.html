@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Excalimux - Multiple Excalidraw Drawings</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    }
+
+    .app-container {
+      display: flex;
+      width: 100%;
+      height: 100vh;
+    }
+
+    .drawer {
+      width: 250px;
+      height: 100%;
+      background-color: #f5f5f5;
+      border-right: 1px solid #ddd;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .drawer-header {
+      padding: 16px;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .drawer-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .new-drawing-btn {
+      width: 100%;
+      padding: 8px 16px;
+      background-color: #4a8df6;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .new-drawing-btn:hover {
+      background-color: #3a7de6;
+    }
+
+    .drawing-list {
+      flex: 1;
+      padding: 8px;
+    }
+
+    .drawing-item {
+      padding: 12px;
+      margin-bottom: 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .drawing-item:hover {
+      background-color: #e9e9e9;
+    }
+
+    .drawing-item.active {
+      background-color: #e1e9fd;
+    }
+
+    .drawing-item-title {
+      font-weight: 500;
+      margin-bottom: 4px;
+      word-break: break-word;
+    }
+
+    .drawing-item-date {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .excalidraw-wrapper {
+      flex: 1;
+      height: 100%;
+    }
+
+    .excalidraw-container {
+      width: 100%;
+      height: 100%;
+    }
+
+    .placeholder {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100%;
+      color: #666;
+      font-size: 1.2rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <div class="drawer">
+      <div class="drawer-header">
+        <h1 class="drawer-title">Excalimux</h1>
+        <button class="new-drawing-btn" id="new-drawing-btn">New Drawing</button>
+      </div>
+      <div class="drawing-list" id="drawing-list">
+        <div class="placeholder">No drawings yet. Create one to get started!</div>
+      </div>
+    </div>
+    <div class="excalidraw-wrapper" id="excalidraw-wrapper">
+      <div class="placeholder">Select a drawing from the drawer or create a new one</div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@excalidraw/excalidraw@0.14.0/dist/excalidraw.production.min.js" defer></script>
+  <script>
+    // Storage key for localStorage
+    const STORAGE_KEY = "excalimux-drawings";
+
+    // Load drawings from localStorage
+    function loadDrawings() {
+      const data = localStorage.getItem(STORAGE_KEY);
+      if (!data) return [];
+      
+      try {
+        const drawings = JSON.parse(data);
+        
+        // Ensure each drawing has the correct structure
+        return drawings.map(drawing => {
+          if (!drawing.appState) {
+            drawing.appState = {};
+          }
+          
+          // Ensure collaborators is an empty array
+          drawing.appState.collaborators = [];
+          
+          // Ensure zoom is set
+          if (!drawing.appState.zoom) {
+            drawing.appState.zoom = { value: 1 };
+          }
+          
+          return drawing;
+        });
+      } catch (error) {
+        console.error("Failed to parse drawings from localStorage:", error);
+        return [];
+      }
+    }
+
+    // Save drawings to localStorage
+    function saveDrawings(drawings) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(drawings));
+    }
+
+    // Create a new drawing
+    function createNewDrawing() {
+      return {
+        id: Date.now().toString(),
+        title: `Drawing ${new Date().toLocaleString()}`,
+        elements: [],
+        appState: {
+          viewBackgroundColor: "#ffffff",
+          currentItemFontFamily: 1,
+          gridSize: null,
+          collaborators: [],
+          zoom: { value: 1 }
+        },
+        created: Date.now(),
+        lastModified: Date.now()
+      };
+    }
+
+    // Update a drawing
+    function updateDrawing(drawings, id, updates) {
+      return drawings.map(drawing => 
+        drawing.id === id 
+          ? { ...drawing, ...updates, lastModified: Date.now() } 
+          : drawing
+      );
+    }
+
+    // Sort drawings by last modified date (most recent first)
+    function sortDrawingsByLastModified(drawings) {
+      return [...drawings].sort((a, b) => b.lastModified - a.lastModified);
+    }
+
+    // Render the drawing list
+    function renderDrawingList(drawings, activeDrawingId) {
+      const drawingList = document.getElementById('drawing-list');
+      
+      if (drawings.length === 0) {
+        drawingList.innerHTML = '<div class="placeholder">No drawings yet. Create one to get started!</div>';
+        return;
+      }
+      
+      drawingList.innerHTML = '';
+      
+      drawings.forEach(drawing => {
+        const drawingItem = document.createElement('div');
+        drawingItem.className = `drawing-item ${drawing.id === activeDrawingId ? 'active' : ''}`;
+        drawingItem.dataset.id = drawing.id;
+        
+        const title = document.createElement('div');
+        title.className = 'drawing-item-title';
+        title.textContent = drawing.title;
+        
+        const date = document.createElement('div');
+        date.className = 'drawing-item-date';
+        date.textContent = new Date(drawing.lastModified).toLocaleString();
+        
+        drawingItem.appendChild(title);
+        drawingItem.appendChild(date);
+        
+        drawingItem.addEventListener('click', () => {
+          selectDrawing(drawing.id);
+        });
+        
+        drawingItem.addEventListener('dblclick', () => {
+          renameDrawing(drawing.id);
+        });
+        
+        drawingList.appendChild(drawingItem);
+      });
+    }
+
+    // Render Excalidraw
+    function renderExcalidraw(drawing) {
+      const excalidrawWrapper = document.getElementById('excalidraw-wrapper');
+      
+      if (!drawing) {
+        excalidrawWrapper.innerHTML = '<div class="placeholder">Select a drawing from the drawer or create a new one</div>';
+        return;
+      }
+      
+      excalidrawWrapper.innerHTML = '<div class="excalidraw-container" id="excalidraw-container"></div>';
+      
+      // Wait for the DOM to update before initializing Excalidraw
+      setTimeout(() => {
+        const excalidrawContainer = document.getElementById('excalidraw-container');
+        
+        if (!excalidrawContainer) {
+          console.error('Excalidraw container not found');
+          return;
+        }
+        
+        try {
+          // Initialize Excalidraw
+          const excalidrawElement = React.createElement(
+            ExcalidrawLib.Excalidraw,
+            {
+              initialData: {
+                elements: drawing.elements || [],
+                appState: { 
+                  ...drawing.appState, 
+                  collaborators: [],
+                  viewBackgroundColor: "#ffffff",
+                  zoom: { value: 1 }
+                }
+              },
+              onChange: (elements, appState) => {
+                // Create a clean copy of appState without non-serializable properties
+                const cleanAppState = { ...appState };
+                cleanAppState.collaborators = [];
+                
+                const updatedDrawings = updateDrawing(app.drawings, app.activeDrawingId, {
+                  elements: [...elements],
+                  appState: cleanAppState
+                });
+                
+                app.drawings = updatedDrawings;
+                saveDrawings(app.drawings);
+              }
+            }
+          );
+          
+          ReactDOM.render(excalidrawElement, excalidrawContainer);
+        } catch (error) {
+          console.error('Error initializing Excalidraw:', error);
+          excalidrawWrapper.innerHTML = '<div class="placeholder">Error initializing Excalidraw. Please try again.</div>';
+        }
+      }, 100);
+    }
+
+    // Select a drawing
+    function selectDrawing(id) {
+      app.activeDrawingId = id;
+      const drawing = app.drawings.find(d => d.id === id);
+      
+      renderDrawingList(app.drawings, app.activeDrawingId);
+      renderExcalidraw(drawing);
+    }
+
+    // Rename a drawing
+    function renameDrawing(id) {
+      const drawing = app.drawings.find(d => d.id === id);
+      if (!drawing) return;
+      
+      const newTitle = prompt("Enter new title:", drawing.title);
+      if (newTitle !== null && newTitle.trim() !== "") {
+        const updatedDrawings = updateDrawing(app.drawings, id, { title: newTitle.trim() });
+        app.drawings = sortDrawingsByLastModified(updatedDrawings);
+        saveDrawings(app.drawings);
+        renderDrawingList(app.drawings, app.activeDrawingId);
+      }
+    }
+
+    // Create a new drawing
+    function handleNewDrawing() {
+      const newDrawing = createNewDrawing();
+      app.drawings = sortDrawingsByLastModified([newDrawing, ...app.drawings]);
+      app.activeDrawingId = newDrawing.id;
+      
+      saveDrawings(app.drawings);
+      renderDrawingList(app.drawings, app.activeDrawingId);
+      renderExcalidraw(newDrawing);
+    }
+
+    // App state
+    const app = {
+      drawings: loadDrawings(),
+      activeDrawingId: null
+    };
+
+    // Initialize the app
+    function initApp() {
+      console.log("Initializing app...");
+      
+      // Make sure ExcalidrawLib is loaded
+      if (typeof ExcalidrawLib === 'undefined') {
+        console.error("ExcalidrawLib is not loaded. Waiting for it to load...");
+        setTimeout(initApp, 500);
+        return;
+      }
+      
+      console.log("ExcalidrawLib loaded successfully");
+      
+      // Set active drawing to the most recent one if available
+      if (app.drawings.length > 0) {
+        app.activeDrawingId = app.drawings[0].id;
+      }
+      
+      // Render the initial UI
+      renderDrawingList(app.drawings, app.activeDrawingId);
+      
+      if (app.activeDrawingId) {
+        const activeDrawing = app.drawings.find(d => d.id === app.activeDrawingId);
+        renderExcalidraw(activeDrawing);
+      } else {
+        renderExcalidraw(null);
+      }
+      
+      // Add event listener for the new drawing button
+      document.getElementById('new-drawing-btn').addEventListener('click', handleNewDrawing);
+      
+      console.log("App initialized successfully");
+    }
+
+    // Initialize the app when the window is fully loaded
+    window.onload = initApp;
+  </script>
+</body>
+</html>
