@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Excalimux - Multiple Drawings</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    }
+
+    .app-container {
+      display: flex;
+      width: 100%;
+      height: 100vh;
+    }
+
+    .drawer {
+      width: 250px;
+      height: 100%;
+      background-color: #f5f5f5;
+      border-right: 1px solid #ddd;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .drawer-header {
+      padding: 16px;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .drawer-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .new-drawing-btn {
+      width: 100%;
+      padding: 8px 16px;
+      background-color: #4a8df6;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .new-drawing-btn:hover {
+      background-color: #3a7de6;
+    }
+
+    .drawing-list {
+      flex: 1;
+      padding: 8px;
+    }
+
+    .drawing-item {
+      padding: 12px;
+      margin-bottom: 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .drawing-item:hover {
+      background-color: #e9e9e9;
+    }
+
+    .drawing-item.active {
+      background-color: #e1e9fd;
+    }
+
+    .drawing-item-title {
+      font-weight: 500;
+      margin-bottom: 4px;
+      word-break: break-word;
+    }
+
+    .drawing-item-date {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .canvas-wrapper {
+      flex: 1;
+      height: 100%;
+      position: relative;
+    }
+
+    .canvas-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #fff;
+    }
+
+    .toolbar {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background-color: #fff;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 5px;
+      display: flex;
+      gap: 5px;
+    }
+
+    .tool-btn {
+      width: 30px;
+      height: 30px;
+      background-color: #f5f5f5;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .tool-btn.active {
+      background-color: #e1e9fd;
+      border-color: #4a8df6;
+    }
+
+    .placeholder {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100%;
+      color: #666;
+      font-size: 1.2rem;
+    }
+
+    .color-picker {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background-color: #fff;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 5px;
+      display: flex;
+      gap: 5px;
+    }
+
+    .color-btn {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 1px solid #ddd;
+    }
+
+    .color-btn.active {
+      border: 2px solid #000;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <div class="drawer">
+      <div class="drawer-header">
+        <h1 class="drawer-title">Excalimux</h1>
+        <button class="new-drawing-btn" id="new-drawing-btn">New Drawing</button>
+      </div>
+      <div class="drawing-list" id="drawing-list">
+        <div class="placeholder">No drawings yet. Create one to get started!</div>
+      </div>
+    </div>
+    <div class="canvas-wrapper" id="canvas-wrapper">
+      <div class="placeholder">Select a drawing from the drawer or create a new one</div>
+    </div>
+  </div>
+
+  <script>
+    // Storage key for localStorage
+    const STORAGE_KEY = "excalimux-drawings";
+
+    // Drawing tools
+    const TOOLS = {
+      PEN: 'pen',
+      LINE: 'line',
+      RECT: 'rect',
+      CIRCLE: 'circle',
+      ERASER: 'eraser'
+    };
+
+    // Colors
+    const COLORS = [
+      '#000000', // Black
+      '#ff0000', // Red
+      '#00ff00', // Green
+      '#0000ff', // Blue
+      '#ffff00', // Yellow
+      '#ff00ff', // Magenta
+      '#00ffff'  // Cyan
+    ];
+
+    // Load drawings from localStorage
+    function loadDrawings() {
+      const data = localStorage.getItem(STORAGE_KEY);
+      if (!data) return [];
+      
+      try {
+        return JSON.parse(data);
+      } catch (error) {
+        console.error("Failed to parse drawings from localStorage:", error);
+        return [];
+      }
+    }
+
+    // Save drawings to localStorage
+    function saveDrawings(drawings) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(drawings));
+    }
+
+    // Create a new drawing
+    function createNewDrawing() {
+      return {
+        id: Date.now().toString(),
+        title: `Drawing ${new Date().toLocaleString()}`,
+        paths: [],
+        created: Date.now(),
+        lastModified: Date.now()
+      };
+    }
+
+    // Update a drawing
+    function updateDrawing(drawings, id, updates) {
+      return drawings.map(drawing => 
+        drawing.id === id 
+          ? { ...drawing, ...updates, lastModified: Date.now() } 
+          : drawing
+      );
+    }
+
+    // Sort drawings by last modified date (most recent first)
+    function sortDrawingsByLastModified(drawings) {
+      return [...drawings].sort((a, b) => b.lastModified - a.lastModified);
+    }
+
+    // Render the drawing list
+    function renderDrawingList(drawings, activeDrawingId) {
+      const drawingList = document.getElementById('drawing-list');
+      
+      if (drawings.length === 0) {
+        drawingList.innerHTML = '<div class="placeholder">No drawings yet. Create one to get started!</div>';
+        return;
+      }
+      
+      drawingList.innerHTML = '';
+      
+      drawings.forEach(drawing => {
+        const drawingItem = document.createElement('div');
+        drawingItem.className = `drawing-item ${drawing.id === activeDrawingId ? 'active' : ''}`;
+        drawingItem.dataset.id = drawing.id;
+        
+        const title = document.createElement('div');
+        title.className = 'drawing-item-title';
+        title.textContent = drawing.title;
+        
+        const date = document.createElement('div');
+        date.className = 'drawing-item-date';
+        date.textContent = new Date(drawing.lastModified).toLocaleString();
+        
+        drawingItem.appendChild(title);
+        drawingItem.appendChild(date);
+        
+        drawingItem.addEventListener('click', () => {
+          selectDrawing(drawing.id);
+        });
+        
+        drawingItem.addEventListener('dblclick', () => {
+          renameDrawing(drawing.id);
+        });
+        
+        drawingList.appendChild(drawingItem);
+      });
+    }
+
+    // Initialize the canvas
+    function initCanvas(drawing) {
+      const canvasWrapper = document.getElementById('canvas-wrapper');
+      
+      if (!drawing) {
+        canvasWrapper.innerHTML = '<div class="placeholder">Select a drawing from the drawer or create a new one</div>';
+        return;
+      }
+      
+      canvasWrapper.innerHTML = `
+        <div class="canvas-container">
+          <canvas id="drawing-canvas"></canvas>
+          <div class="toolbar" id="toolbar">
+            <button class="tool-btn active" data-tool="${TOOLS.PEN}" title="Pen">✏️</button>
+            <button class="tool-btn" data-tool="${TOOLS.LINE}" title="Line">📏</button>
+            <button class="tool-btn" data-tool="${TOOLS.RECT}" title="Rectangle">⬜</button>
+            <button class="tool-btn" data-tool="${TOOLS.CIRCLE}" title="Circle">⭕</button>
+            <button class="tool-btn" data-tool="${TOOLS.ERASER}" title="Eraser">🧽</button>
+          </div>
+          <div class="color-picker" id="color-picker">
+            ${COLORS.map((color, index) => `
+              <button class="color-btn ${index === 0 ? 'active' : ''}" 
+                data-color="${color}" 
+                style="background-color: ${color};"
+                title="${color}"></button>
+            `).join('')}
+          </div>
+        </div>
+      `;
+      
+      const canvas = document.getElementById('drawing-canvas');
+      const ctx = canvas.getContext('2d');
+      
+      // Set canvas size
+      function resizeCanvas() {
+        const container = canvas.parentElement;
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
+        redrawCanvas();
+      }
+      
+      // Initial resize
+      resizeCanvas();
+      
+      // Listen for window resize
+      window.addEventListener('resize', resizeCanvas);
+      
+      // Drawing state
+      let isDrawing = false;
+      let lastX = 0;
+      let lastY = 0;
+      let currentTool = TOOLS.PEN;
+      let currentColor = COLORS[0];
+      let startX = 0;
+      let startY = 0;
+      let tempPath = null;
+      
+      // Set up tool buttons
+      const toolButtons = document.querySelectorAll('.tool-btn');
+      toolButtons.forEach(button => {
+        button.addEventListener('click', () => {
+          toolButtons.forEach(btn => btn.classList.remove('active'));
+          button.classList.add('active');
+          currentTool = button.dataset.tool;
+        });
+      });
+      
+      // Set up color buttons
+      const colorButtons = document.querySelectorAll('.color-btn');
+      colorButtons.forEach(button => {
+        button.addEventListener('click', () => {
+          colorButtons.forEach(btn => btn.classList.remove('active'));
+          button.classList.add('active');
+          currentColor = button.dataset.color;
+        });
+      });
+      
+      // Mouse events
+      canvas.addEventListener('mousedown', startDrawing);
+      canvas.addEventListener('mousemove', draw);
+      canvas.addEventListener('mouseup', stopDrawing);
+      canvas.addEventListener('mouseout', stopDrawing);
+      
+      // Touch events
+      canvas.addEventListener('touchstart', handleTouchStart);
+      canvas.addEventListener('touchmove', handleTouchMove);
+      canvas.addEventListener('touchend', handleTouchEnd);
+      
+      function handleTouchStart(e) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousedown', {
+          clientX: touch.clientX,
+          clientY: touch.clientY
+        });
+        canvas.dispatchEvent(mouseEvent);
+      }
+      
+      function handleTouchMove(e) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousemove', {
+          clientX: touch.clientX,
+          clientY: touch.clientY
+        });
+        canvas.dispatchEvent(mouseEvent);
+      }
+      
+      function handleTouchEnd(e) {
+        e.preventDefault();
+        const mouseEvent = new MouseEvent('mouseup', {});
+        canvas.dispatchEvent(mouseEvent);
+      }
+      
+      function startDrawing(e) {
+        isDrawing = true;
+        
+        const rect = canvas.getBoundingClientRect();
+        startX = e.clientX - rect.left;
+        startY = e.clientY - rect.top;
+        lastX = startX;
+        lastY = startY;
+        
+        if (currentTool === TOOLS.PEN || currentTool === TOOLS.ERASER) {
+          tempPath = {
+            tool: currentTool,
+            color: currentTool === TOOLS.ERASER ? '#ffffff' : currentColor,
+            points: [[startX, startY]]
+          };
+        } else {
+          tempPath = {
+            tool: currentTool,
+            color: currentColor,
+            startX,
+            startY,
+            endX: startX,
+            endY: startY
+          };
+        }
+      }
+      
+      function draw(e) {
+        if (!isDrawing) return;
+        
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        if (currentTool === TOOLS.PEN || currentTool === TOOLS.ERASER) {
+          // Add point to path
+          tempPath.points.push([x, y]);
+          
+          // Draw line
+          ctx.beginPath();
+          ctx.strokeStyle = currentTool === TOOLS.ERASER ? '#ffffff' : currentColor;
+          ctx.lineWidth = currentTool === TOOLS.ERASER ? 20 : 2;
+          ctx.moveTo(lastX, lastY);
+          ctx.lineTo(x, y);
+          ctx.stroke();
+        } else {
+          // Update end coordinates
+          tempPath.endX = x;
+          tempPath.endY = y;
+          
+          // Redraw canvas to show the shape in progress
+          redrawCanvas();
+          
+          // Draw the current shape
+          drawShape(tempPath);
+        }
+        
+        lastX = x;
+        lastY = y;
+      }
+      
+      function stopDrawing() {
+        if (!isDrawing) return;
+        isDrawing = false;
+        
+        if (tempPath) {
+          // Add path to drawing
+          drawing.paths.push(tempPath);
+          tempPath = null;
+          
+          // Save drawing
+          const updatedDrawings = updateDrawing(app.drawings, drawing.id, {
+            paths: drawing.paths
+          });
+          
+          app.drawings = updatedDrawings;
+          saveDrawings(app.drawings);
+        }
+      }
+      
+      function drawShape(shape) {
+        ctx.beginPath();
+        ctx.strokeStyle = shape.color;
+        ctx.lineWidth = 2;
+        
+        switch (shape.tool) {
+          case TOOLS.LINE:
+            ctx.moveTo(shape.startX, shape.startY);
+            ctx.lineTo(shape.endX, shape.endY);
+            break;
+          case TOOLS.RECT:
+            ctx.rect(
+              Math.min(shape.startX, shape.endX),
+              Math.min(shape.startY, shape.endY),
+              Math.abs(shape.endX - shape.startX),
+              Math.abs(shape.endY - shape.startY)
+            );
+            break;
+          case TOOLS.CIRCLE:
+            const radius = Math.sqrt(
+              Math.pow(shape.endX - shape.startX, 2) +
+              Math.pow(shape.endY - shape.startY, 2)
+            );
+            ctx.arc(shape.startX, shape.startY, radius, 0, Math.PI * 2);
+            break;
+        }
+        
+        ctx.stroke();
+      }
+      
+      function drawPath(path) {
+        if (path.tool === TOOLS.PEN || path.tool === TOOLS.ERASER) {
+          if (path.points.length < 2) return;
+          
+          ctx.beginPath();
+          ctx.strokeStyle = path.color;
+          ctx.lineWidth = path.tool === TOOLS.ERASER ? 20 : 2;
+          ctx.moveTo(path.points[0][0], path.points[0][1]);
+          
+          for (let i = 1; i < path.points.length; i++) {
+            ctx.lineTo(path.points[i][0], path.points[i][1]);
+          }
+          
+          ctx.stroke();
+        } else {
+          drawShape(path);
+        }
+      }
+      
+      function redrawCanvas() {
+        // Clear canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw all paths
+        drawing.paths.forEach(drawPath);
+      }
+    }
+
+    // Select a drawing
+    function selectDrawing(id) {
+      app.activeDrawingId = id;
+      const drawing = app.drawings.find(d => d.id === id);
+      
+      renderDrawingList(app.drawings, app.activeDrawingId);
+      initCanvas(drawing);
+    }
+
+    // Rename a drawing
+    function renameDrawing(id) {
+      const drawing = app.drawings.find(d => d.id === id);
+      if (!drawing) return;
+      
+      const newTitle = prompt("Enter new title:", drawing.title);
+      if (newTitle !== null && newTitle.trim() !== "") {
+        const updatedDrawings = updateDrawing(app.drawings, id, { title: newTitle.trim() });
+        app.drawings = sortDrawingsByLastModified(updatedDrawings);
+        saveDrawings(app.drawings);
+        renderDrawingList(app.drawings, app.activeDrawingId);
+      }
+    }
+
+    // Create a new drawing
+    function handleNewDrawing() {
+      const newDrawing = createNewDrawing();
+      app.drawings = sortDrawingsByLastModified([newDrawing, ...app.drawings]);
+      app.activeDrawingId = newDrawing.id;
+      
+      saveDrawings(app.drawings);
+      renderDrawingList(app.drawings, app.activeDrawingId);
+      initCanvas(newDrawing);
+    }
+
+    // App state
+    const app = {
+      drawings: loadDrawings(),
+      activeDrawingId: null
+    };
+
+    // Initialize the app
+    function initApp() {
+      // Set active drawing to the most recent one if available
+      if (app.drawings.length > 0) {
+        app.activeDrawingId = app.drawings[0].id;
+      }
+      
+      // Render the initial UI
+      renderDrawingList(app.drawings, app.activeDrawingId);
+      
+      if (app.activeDrawingId) {
+        const activeDrawing = app.drawings.find(d => d.id === app.activeDrawingId);
+        initCanvas(activeDrawing);
+      } else {
+        initCanvas(null);
+      }
+      
+      // Add event listener for the new drawing button
+      document.getElementById('new-drawing-btn').addEventListener('click', handleNewDrawing);
+    }
+
+    // Initialize the app when the window is loaded
+    window.onload = initApp;
+  </script>
+</body>
+</html>
